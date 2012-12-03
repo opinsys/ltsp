@@ -1,0 +1,28 @@
+if [ -e /etc/rpm/macros.dist ]; then
+    LTSPDIST=`cat /etc/rpm/macros.dist |grep %dist |awk {'print $2'} | sed 's/\.//'`
+fi
+if [ -z "$LTSPDIST" ]; then
+    # Host OS is not detected.
+    LTSPDIST="Your operating system"
+fi
+case "$LTSPDIST" in
+    fc11)
+        export VENDORDEF="Fedora"
+        export RELEASEDEF=11
+        export TFTPDIR=/var/lib/tftpboot
+    ;;
+    fc14)
+        export VENDORDEF="Fedora"
+        export RELEASEDEF=14
+        export TFTPDIR=/var/lib/tftpboot
+    ;;
+    el6)
+        export VENDORDEF="Fedora"
+        export RELEASEDEF=el6
+        export TFTPDIR=/var/lib/tftpboot
+    ;;
+    *)
+        echo "ERROR: $LTSPDIST is unsupported."
+        exit 1
+    ;;
+esac

@@ -1,0 +1,43 @@
+#!/bin/sh
+#
+# Copyright (c) 2002 by James A. McQuillan (McQuillan Systems, LLC)
+# Copyright (c) 2008 by Warren Togami      (Red Hat, Inc.)
+# Copyright (c) 2008 by Vagrant Cascadian
+#
+# This software is licensed under the GNU General Public License version 2,
+# the full text of which can be found in the COPYING file.
+#
+
+#
+# Get the common code for X screen scripts
+#
+
+. /usr/share/ltsp/screen-x-common
+
+XDM_SERVER=${XDM_SERVER:-${SERVER}}
+
+if [ $# -lt 1 ]; then
+    X_ARGS="$X_ARGS -query ${XDM_SERVER}"
+else
+    X_ARGS="$X_ARGS $*"
+fi
+
+XBINARY="X"
+
+if boolean_is_true "${DISABLE_ACCESS_CONTROL}" ; then
+    X_ARGS="$X_ARGS -ac"
+fi
+
+# Add -terminate to args because it helps to avoid X regeneration bugs
+X_ARGS="$X_ARGS -terminate"
+
+# add -br as a black screen is so much nicer than the grey thatch default
+X_ARGS="$X_ARGS -br"
+
+# set default xfs settings
+get_xfs_settings $XDM_SERVER
+
+${XBINARY} ${X_ARGS} vt${TTY} ${DISPLAY}
+if [ $? -ne 0 ]; then
+    error_delay "xserver failed, press <enter> to continue "
+fi

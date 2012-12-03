@@ -1,0 +1,61 @@
+.TH "ltsp-config" "8" "2012-05-28"
+.SH "NAME"
+ltsp\-config \- Configure certain parts of an LTSP server
+
+.SH "SYNOPSIS"
+.PP
+\fBltsp\-config\fR TOOL [OPTION]
+
+.SH "DESCRIPTION"
+.PP
+\fBltsp\-config\fR generates or updates configuration files for certain
+parts of an LTSP server, like lts.conf, the DHCP server, nbd\-server etc.
+
+.SH "OPTIONS"
+.PP
+.IP "\fBdnsmasq\fP" 18
+Configure dnsmasq.
+
+.IP "" 2
+.RS
+.IP "\fB\-\-no\-proxy\-dhcp\fP" 16
+Don't enable proxyDHCP mode for detected subnets.
+.RE
+
+.IP "\fBisc\-dhcp\-server\fP" 18
+Configure isc\-dhcp\-server.
+
+.IP "\fBlts.conf\fP"
+Create a sample lts.conf.
+
+.IP "\fBnbd\-server\fP"
+Configure nbd-server.
+
+.SS "Generic options for most tools:"
+
+.IP "\fB\-d\fP \fB\-\-directory\fP" 18
+A directory to search for configuration templates, in addition to
+"/usr/share/doc/ltsp-server/examples".
+
+.IP "\fB\-h\fP \fB\-\-help\fP" 18
+The application help page.
+
+.IP "\fB\-l\fP \fB\-\-language\fP"
+Preferred language for configuration files.
+
+.IP "\fB\-o\fP \fB\-\-overwrite\fP"
+Overwrite existing configuration files.
+
+.SH "SEE ALSO"
+.PP
+\fBdnsmasq\fP(8), \fBdhcpd.conf\fP(5), \fBlts.conf\fP(5), \fBnbd\-server\fP(5)
+
+.SH "AVAILABILITY"
+.PP
+\fBltsp\-config\fR is part of \fBltsp\fP package and the latest versions
+are available in source form from \fIhttps://launchpad.net/ltsp\fR.
+
+.SH "MAN PAGE AUTHOR"
+.PP
+Copyright 2012 Alkis Georgopoulos <alkisg@gmail.com>, distributed under
+the terms of the GNU General Public License version 2 or any later version.

@@ -1,0 +1,37 @@
+#!/bin/sh
+
+# install this in the server's cron.daily to have the terminal chroot
+# filesystems submit popularity-contest data
+
+# it requires installing popularity-contest in each chroot, preferrably
+# configured to use HTTP POST, introduced in popularity-contest 1.30, as this
+# avoids the need for working mail in the chroot environment.
+
+# change this if you have chroots in other locations
+BASE="/opt/ltsp"
+
+for base in $BASE ; do
+    if [ -d "$BASE" ]; then
+        # find all the top-level directories in $BASE
+        for dir in $(find $BASE -maxdepth 1 -type d) ; do
+            # only do the following if popularity-contest is installed, 
+            # /bin/true exists and returns true (in case of architecture mis-match),
+            # and chroot is available
+            if [ -x $dir/bin/true ] && [ $dir/bin/true ] && [ -n "$(which chroot)" ] ; then
+                # check for presence of cron.daily or cron.weekly script, and
+                # run the first one found (popcon 1.45+ runs from cron.daily)
+                for frequency in daily weekly ; do
+                    script="/etc/cron.$frequency/popularity-contest"
+                    if [ -x "$dir/$script" ]; then
+                        if [ "$frequency" = "weekly" ] && [ "$(date +%w)" != "0" ]; then
+                            # only run cron.weekly script once a week
+                            break
+                        fi
+                        chroot $dir $script
+                        break
+                    fi
+                done
+            fi
+        done
+    fi
+done

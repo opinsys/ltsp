@@ -1,0 +1,72 @@
+case "$MODE" in
+    commandline)
+        add_option "installer" "`eval_gettext "Gentoo installer to use, defaults to kicktoo"`" "advanced" "true"
+        add_option "installer-profile" "`eval_gettext "Path to installer profile"`" "advanced" "true"
+        add_option "installer-debug" "`eval_gettext "Debug installer"`" "advanced" "false"
+        add_option "installer-verbose" "`eval_gettext "Show installer external command output"`" "advanced" "false"
+    ;;
+    configure)
+		if [ -n "$option_installer_value" ] || [ -n "$INSTALLER" ]; then
+			INSTALLER=${option_installer_value:-$INSTALLER}
+
+			case "$INSTALLER" in 
+			quickstart|kicktoo)
+				printf "`eval_gettext "Using installer: %s"`\n" $INSTALLER ;;
+            *)			
+				printf "`eval_gettext "ERROR: unsupported installer. Check your --installer argument: %s"`\n", $INSTALLER
+				printf "`eval_gettext "       supported values are: %s"`\n", "quickstart kicktoo"
+				exit 1
+			esac
+		else
+			INSTALLER="kicktoo"
+			printf "`eval_gettext "Using installer: %s"`\n" $INSTALLER
+		fi
+
+        if [ -n "$option_installer_profile_value" ] || [ -n "$INSTALLER_PROFILE" ]; then
+            INSTALLER_PROFILE=${option_installer_profile_value:-$INSTALLER_PROFILE}
+            printf "`eval_gettext "Custom installer profile: %s"`\n" $INSTALLER_PROFILE
+        else
+            INSTALLER_PROFILE="/etc/ltsp/profiles/kicktoo.profile"
+            printf "`eval_gettext "Default installer profile: %s"`\n" $INSTALLER_PROFILE
+        fi
+
+        if [ ! -e $INSTALLER_PROFILE ]; then
+            printf "`eval_gettext "ERROR: %s does not exist"`\n" $INSTALLER_PROFILE
+            exit 1
+        fi
+
+        INSTALLER_ARGS=""
+        if [ -n "$option_installer_debug_value" ] || [ "${INSTALLER_DEBUG}" = true ]; then
+            INSTALLER_ARGS="$INSTALLER_ARGS --debug"
+        fi
+        if [ -n "$option_installer_verbose_value" ] || [ "${INSTALLER_VERBOSE}" = true ]; then
+            INSTALLER_ARGS="$INSTALLER_ARGS --verbose"
+        fi
+    ;;
+    install)
+        printf "`eval_gettext "Installing into: %s"`\n" $ROOT
+        
+        # TODO: figure out why we need to set ROOT=""
+        # ROOT is somehow used in emerge, causing emerged installs
+        # to go into /chroot/chroot, resetting until quickstart is done.
+        TEMPROOT=${ROOT}        
+        ROOT=""
+
+        PACKAGES="${PACKAGES}" STAGE_URI="${STAGE_URI}" MIRRORS="${MIRRORS}" \
+        MAKEOPTS="${MAKEOPTS}" LOCALE="${LOCALE}" BASE="${BASE}" \
+        ARCH="${ARCH}" MAIN_ARCH="${MAIN_ARCH}" NAME="${CHROOT}" EXCLUDE="${EXCLUDE}" \
+        KERNEL_CONFIG_URI="${KERNEL_CONFIG_URI}" KERNEL_SOURCES="${KERNEL_SOURCES}" \
+        VIDEO_CARDS="${VIDEO_CARDS}" \
+        $INSTALLER $INSTALLER_ARGS $INSTALLER_PROFILE
+        
+        # And reset to the original value
+        ROOT=${TEMPROOT}
+    ;;
+    after-install)
+        # removing stage symlink
+        STAGE_FILE=$( basename ${STAGE_URI} )
+        if [ -L ${ROOT}/${STAGE_FILE} ]; then
+            rm ${ROOT}/${STAGE_FILE}
+        fi
+    ;;
+esac

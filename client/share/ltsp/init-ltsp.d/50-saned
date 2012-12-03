@@ -1,0 +1,3 @@
+if boolean_is_true "$SCANNER" ; then
+    saned -a
+fi

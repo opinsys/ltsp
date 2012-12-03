@@ -1,0 +1,176 @@
+# Common functions shared by LTSP scripts
+
+# Multiple inclusions shouldn't ever happen, but let's prevent them anyway
+if [ -n "$sourced_ltsp_common_functions" ]; then
+    echo "Warning: $0 tried to include ltsp-common-functions multiple times." >&2
+    return 0
+else
+    sourced_ltsp_common_functions=true
+fi
+
+warn()
+{
+    echo "$@" >&2
+}
+
+die() {
+    warn "$@"
+    exit 1
+}
+
+log()
+{
+    if [ -x /usr/bin/logger ]; then
+        logger -s -t "${0##/}" "$*"
+    else
+        warn "${0##/}: $*"
+    fi
+}
+
+# To debug LTSP scripts, set ltsp.debug=<scriptname> in the kernel
+# command line, or run debug=<scriptname> <scriptname>.
+# $0 is automatically prefixed in debug messages.
+# TODO: merge ltsp-build-client's debug with this one.
+debug()
+{
+    local x
+
+    if [ -z "$debug" ]; then
+        if [ -f /proc/cmdline ]; then
+            for x in $(cat /proc/cmdline); do
+                case "$x" in
+                    ltsp.debug=*)
+                        debug=${x#ltsp.debug=}
+                    ;;
+                esac
+            done
+        fi
+        debug=${debug:-false}
+    fi
+    if [ "$debug" = "${0##*/}" ]; then
+        log "$@"
+    fi
+}
+
+boolean_is_true(){
+    case $1 in
+       # match all cases of true|y|yes
+       [Tt][Rr][Uu][Ee]|[Yy]|[Yy][Ee][Ss]) return 0 ;;
+       *) return 1 ;;
+    esac
+}
+
+run_parts()
+# Parameters:
+# $1: Directory with main scripts
+# $2: Directory with override scripts, defaults to ''
+# $3: Script matching regex, defaults to '[0-9]*'
+{
+    if [ ! -d "$1" ]; then
+        warn "Not a directory: $1"
+        return 1
+    fi
+    # We do want to source the scripts in a subshell, so that they affect each
+    # other, but not the callee script.
+    # ${2:+"$2"} means "preserve spaces, but don't pass a parameter if empty"
+    find "$1" ${2:+"$2"} -maxdepth 1 -type f -name ${3:-'[0-9]*'} \
+        -printf '%f\n' 2>/dev/null | sort | uniq | 
+        while read script; do
+            if [ -n "$2" ] && [ -f "$2/$script" ]; then
+                . "$2/$script"
+            else
+                . "$1/$script"
+            fi
+        done
+}
+
+# list files in a directory consisting only of alphanumerics, hyphens and
+# underscores
+# $1 - directory to list
+# $2 - optional prefix to limit which files are selected
+run_parts_list() {
+    test $# -ge 1 || die "ERROR: Usage: run_parts_list <dir>"
+    if [ -d "$1" ]; then
+        find -L "$1" -mindepth 1 -maxdepth 1 -type f -name "$2*" |
+            sed -n '/.*\/[0-9a-zA-Z_\-]\{1,\}$/p' | sort -n
+    fi
+}
+
+detect_vendor() {
+    if [ -e /etc/sysconfig/ltspdist ]; then
+        . /etc/sysconfig/ltspdist
+        echo "$VENDORDEF"
+    else
+        echo $(lsb_release --id --short | tr " " "_")
+    fi
+}
+
+# Distros may override this function to implement their own
+# architecture detection.
+detect_arch() {
+    echo $(uname -m)
+}
+
+require_root()
+{
+    if [ ${UID:-$(id -u)} -ne 0 ]; then
+        die "Superuser privileges are needed."
+    fi
+}
+
+# Remember mounted dirs so that it's easier to unmount them with a single call
+# to umount_marked. They'll be unmounted in reverse order.
+# Use the normal mount syntax, e.g.
+#   mark_mount -t proc proc "$ROOT/proc"
+mark_mount() {
+    local dir old_marked_mounts
+
+    # The last parameter is the dir we need to remember to unmount
+    dir=$(eval "echo \$$#")
+    # If the user presses Ctrl+C while mount is still running, there's
+    # a possibility that it will succeed but it won't go inside the if.
+    # So mark the dir before mount.
+    # Use newlines to separate dirs, in case they contain spaces
+    old_marked_mounts="$MARKED_MOUNTS"
+    if [ -z "$MARKED_MOUNTS" ]; then
+        MARKED_MOUNTS="$dir"
+    else
+        MARKED_MOUNTS="$dir
+$MARKED_MOUNTS"
+    fi
+    if ! mount "$@"; then
+        MARKED_MOUNTS="$old_marked_mounts"
+        die "Could not mount $dir."
+    fi
+}
+
+umount_marked() {
+    [ -z "$MARKED_MOUNTS" ] && return 0
+
+    # Wait until all buffers are flushed, otherwise umount might fail
+    sync
+    echo "$MARKED_MOUNTS" | while read dir; do
+        if ! umount "$dir"; then
+            warn "Couldn't unmount $dir."
+        fi
+    done
+    unset MARKED_MOUNTS
+}
+
+debug "Started"
+
+# Source tool-specific settings and functions, if they're provided
+ltsp_tool=${0##*/}
+if [ -f "/usr/share/ltsp/$ltsp_tool-functions" ]; then
+    . "/usr/share/ltsp/$ltsp_tool-functions"
+fi
+
+# Source tool-specific configuration files
+if [ -f "/etc/ltsp/$ltsp_tool.conf" ]; then
+    . "/etc/ltsp/$ltsp_tool.conf"
+fi
+if [ -d "/etc/ltsp/$ltsp_tool.conf.d" ]; then
+    for file in $(run_parts_list "/etc/ltsp/$ltsp_tool.conf.d") ; do
+        . "$file"
+    done
+fi

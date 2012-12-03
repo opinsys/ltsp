@@ -1,0 +1,32 @@
+case "$MODE" in
+    commandline)
+        add_option "arch" "`eval_gettext "set the target architecture"`" "regular" "true"
+        ;;
+    configure)
+        if [ -n "$option_arch_value" ] || [ -n "$ARCH" ]; then
+            ARCH="${option_arch_value:-$ARCH}"
+        else
+            ARCH=i686
+        fi
+        
+        # determining main arch (needed to retrieve stage file)
+        case "${ARCH}" in
+            i486|i686)
+                MAIN_ARCH=x86
+            ;;
+            amd64)
+                MAIN_ARCH=amd64
+            ;;
+            *)
+            printf "`eval_gettext "ERROR: unsupported architecture. Check your --arch argument: %s"`", $ARCH_OPT
+            printf "`eval_gettext "       supported values are: %s"`", "i486, i686, amd64"
+            exit 1
+            ;;
+        esac     
+        ;;
+    finalization)
+        # use to determine client arch later
+        mkdir -p "$ROOT/etc/ltsp"
+        echo "$ARCH" > "$ROOT/etc/ltsp/arch.conf"
+        ;;
+esac

@@ -1,0 +1,14 @@
+# Set up timezone
+if [ -n "$TIMEZONE" ] && [ -e "/usr/share/zoneinfo/$TIMEZONE" ]; then
+    cp /usr/share/zoneinfo/$TIMEZONE /etc/localtime 2>/dev/null
+fi
+
+# Set timeserver to $SERVER if set to autodetect
+if [ "$TIMESERVER" = "auto" ]; then
+    TIMESERVER=${SERVER}
+fi
+
+# Set up timeserver
+if [ -n "$TIMESERVER" ]; then
+    ntpdate $TIMESERVER && hwclock --systohc --${HWCLOCK:-"utc"} --noadjfile || true
+fi

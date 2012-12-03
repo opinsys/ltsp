@@ -1,0 +1,11 @@
+# This script adds the ability to force a particular driver using the
+# XSERVER lts.conf var
+
+if [ -n "${XSERVER}" ]; then
+    device_hacks="$device_hacks set_xserver"
+    CONFIGURE_X="True"
+
+    set_xserver() {
+        echo "        Driver \"${XSERVER}\""
+    }
+fi

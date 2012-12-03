@@ -1,0 +1,36 @@
+# Local functions
+
+packages() {
+    chroot=$1
+    pkgdir="$chroot/var/db/pkg"
+    for dir in $pkgdir/net-misc/ltsp* $pkgdir/*/ldm* $pkgdir/sys-fs/ltspfs-*; do
+        if [ -f "$dir/PF" ]; then
+            cat "$dir/PF"
+        fi
+    done
+}
+
+# Gentoo-specific function overrides for ltsp-info
+
+server_packages() {
+    echo server packages:
+    packages
+    echo
+}
+
+chroot_packages() {
+    chroot=$1
+    if [ -d $chroot/var/db/pkg ]; then
+        echo "packages in chroot: $chroot"
+        packages $chroot
+        echo
+    fi
+}
+
+chroot_release() {
+    if [ -x $chroot/usr/bin/lsb_release ]; then
+        echo "chroot information: $chroot"
+        ROOT=$chroot ltsp-chroot lsb_release --all
+        echo
+    fi
+}

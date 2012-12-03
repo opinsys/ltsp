@@ -1,0 +1,94 @@
+.TH "ltsp-build-client" "8" "2011-08-11" "" ""
+.SH "NAME"
+ltsp\-build\-client \- Builds an LTSP client system for use with the LTSP server 
+
+.SH "SYNOPSIS"
+.PP 
+\fBltsp\-build\-client\fR  <options>
+
+.SH "DESCRIPTION"
+.PP 
+\fBltsp\-build\-client\fR builds an ltsp client chroot using standard packages
+for use with the ltsp server.  This chroot installation  can be modified in a
+number of ways as outlined in the OPTIONS section.  If present, defaults will
+be read from the configuration file /etc/ltsp/ltsp\-build\-client.conf, and
+will be overridden by using the command line options. \fBltsp\-build\-client\fR
+is usually run as the root user.  Visit http://www.ltsp.org for more
+information.
+
+.SH "OPTIONS"
+.PP 
+Not all options are available on all installations. For a complete list of
+available options, use the \fB\-\-help\fR and \fB\-\-extra\-help\fR options.
+
+.IP "\fB\-\-arch\fP \fIarch\fR" 10 
+Builds a chroot with the specified architecture. Must be a supported
+architecture of the distribution, and compatible with the host architecture.
+Defaults vary by distribution.
+
+.IP "\fB\-\-base\fP \fIdir\fR" 10 
+Sets the default path for the ltsp chroots to be installed into. Defaults to
+/opt/ltsp/.
+
+.IP "\fB\-\-chroot\fP \fIfile\fR" 10 
+Sets the default name for the ltsp chroot. Defaults to the architecture
+selected with \-\-arch or the running architecture.
+
+.IP "\fB\-\-config\fP \fIfile\fR" 10 
+Load configuration defaults from specified file. See \fBCONFIG FILE\fR below
+for more information.
+
+.IP "\fB\-\-exclude\fP \fIpackages\fR" 10 
+Sets packages to exclude from the initial client chroot.
+ 
+.IP "\fB\-\-extra\-help\fP" 10 
+Displays all available commandline options.
+
+.IP "\fB\-\-help\fP" 10 
+Displays the ltsp\-build\-client help message.
+
+.IP "\fB\-\-mirror\fP \fImirror_url\fR" 10 
+Select the mirror to download packages from. file:/// and http:// URLs are
+supported.
+
+.IP "\fB\-\-purge\-chroot\fP" 10 
+Purges the existing LTSP chroot if present.
+
+.SH "CONFIG FILE"
+.PP
+\fBltsp\-build\-client\fR will read a configuration file to override built-in
+defaults. the default location for this configuration file is
+/etc/ltsp/ltsp\-build\-client.conf, and can be specified with the \-\-conf
+commandline option.
+
+.PP
+values are NAME="VALUE" pairs, with # representing commented lines. most
+commandline options have an equivalent. an example Debian based system with an
+alternate base location, architecture, and distribution:
+
+.PP
+ # set alternate default location for ltsp chroot (\-\-base)
+ BASE="/srv/ltsp"
+ # build an amd64 chroot by default (\-\-arch)
+ ARCH="amd64"
+ # build a Debian sid environment (\-\-dist)
+ DIST="sid"
+
+.SH "SEE ALSO"
+.PP 
+\fBltsp\-update\-sshkeys\fP\fB(8)\fP, 
+\fBltsp\-update\-kernels\fP\fB(8)\fP. 
+
+.SH "AVAILABILITY"
+.PP 
+\fBltsp\-build\-client\fR is part of \fBltsp\fP package and the latest versions
+are available in source form from \fIhttps://launchpad.net/products/ltsp\fR. 
+
+.SH "MAN PAGE AUTHOR"
+.PP 
+Peter Savage \- silentk \- cbx33 
+debug@silentkeystroke.co.uk
+.PP 
+updated 2006, 2009 by Vagrant Cascadian <vagrant@freegeek.org>,
+2011 by Wim Muskee <wimmuskee@gmail.com>
+.\" created by instant / docbook\-to\-man, Fri 21 Apr 2006, 06:18

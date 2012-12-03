@@ -1,0 +1,57 @@
+#!/bin/sh
+#
+# Copyright (c) 2002 by James A. McQuillan (McQuillan Systems, LLC)
+#
+# This software is licensed under the Gnu General Public License version 2,
+# the full text of which can be found in the COPYING file.
+#
+#
+# Script for starting one or more telnet sessions
+#
+
+#
+# Get the lts.conf entries, and assign them to shell
+# variables.
+#
+. /usr/share/ltsp/ltsp_config
+
+#
+# Get the IP address of the host to telnet into.
+# First look for 'TELNET_HOST', if not specified, then
+# look for 'SERVER'. If that isn't specified, then use
+# the default of '192.168.67.1'
+#
+
+if [ $# -ge 1 ]; then
+    TELNET_ARGS=$*
+else
+    TELNET_HOST=${TELNET_HOST:-${SERVER}}
+    TELNET_ARGS="${TELNET_HOST}"
+fi
+
+export TERM=linux           # Setup the terminal type
+
+#
+# Get this terminal name, to display on the top line of the screen
+#
+TTY=$(tty)
+TTY=$(basename ${TTY})
+if [ "${TTY}" = "console" ]; then
+    TTY="tty1"              # Special case for first screen
+fi
+
+    # Clear the screen, to place cursor at the top
+    clear
+
+    # Echo this message, telling user how to proceed.
+    echo -n "Screen:${TTY} - Press <enter> to connect to server..."
+    read CMD
+
+    # Clear the screen before launching telnet
+    clear
+
+    # Launch the telnet program.
+    telnet ${TELNET_ARGS}
+    # Brief pause, in case telnet had errors to report
+    echo -n "Please wait..."
+    sleep 1

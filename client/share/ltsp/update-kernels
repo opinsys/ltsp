@@ -1,0 +1,425 @@
+#!/bin/sh -e
+#
+#  Copyright (c) 2006 Vagrant Cascadian <vagrant@freegeek.org>
+#
+#  2006, Vagrant Cascadian <vagrant@freegeek.org>
+#        Oliver Grawert <ogra@canonical.com>
+#  2007, Vagrant Cascadian <vagrant@freegeek.org>
+#        Scott Balneaves <sbalneav@ltsp.org>
+#  2008, Vagrant Cascadian <vagrant@freegeek.org>
+#  2012, Alkis Georgopoulos <alkisg@gmail.com>
+#  2012, Vagrant Cascadian <vagrant@freegeek.org>
+#
+#  This program is free software; you can redistribute it and/or
+#  modify it under the terms of the GNU General Public License as
+#  published by the Free Software Foundation; either version 2 of the
+#  License, or (at your option) any later version.
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program.  If not, you can find it on the World Wide
+#  Web at http://www.gnu.org/copyleft/gpl.html, or write to the Free
+#  Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston,
+#  MA 02110-1301, USA.
+#
+
+# this script is run either chrooted on the server, or by a client with write
+# access to the NFS mount point. (much of this code was originally in
+# server/ltsp-update-kernels). --vagrant 20060801
+
+case "$0" in
+    /etc/kernel/post*.d*)
+        # Relaunch update-kernels with its correct basename so that
+        # ltsp-client-functions includes /etc/ltsp/update-kernels.conf.
+        QUIET=true exec /usr/share/ltsp/update-kernels "$@"
+        ;;
+esac
+
+msg() {
+    if [ "$QUIET" != "true" ]; then
+       echo $@
+    fi
+}
+
+# List kernel versions in a descending order, while also respecting the e.g.
+#   LIST_KERNELS="generic generic-pae *"
+# order that the user may have put in $CHROOT/etc/ltsp/update-kernels.conf.
+# Distros are required to set e.g. KERNEL_PREFIX="vmlinuz-*', KERNEL_SUFFIX="".
+# The * goes where the version is expected to go.
+kernel_versions() {
+    local - kernels arch loop_kernels kernel
+
+    # Disable glob expansion for this function
+    set -f
+    for kernel in $(find "/boot/" -type f -name "$KERNEL_PREFIX$KERNEL_SUFFIX" -printf "%f\n"); do
+        # Append a descending number to the version
+        i=1000
+        for arch in ${LIST_KERNELS:-*}; do
+            i=$(($i-1))
+            case "$kernel" in
+                $KERNEL_PREFIX$arch$KERNEL_SUFFIX)
+                    version_arch=${kernel#${KERNEL_PREFIX%*}}
+                    version_arch=${version_arch%${KERNEL_SUFFIX#*}}
+                    version=${version_arch#$arch}
+                    version=${version_arch%$arch}
+                    echo "$version-$i $version_arch"
+                    break 1
+                    ;;
+            esac
+        done
+    done | sort -frV | awk '{ print $2 }'
+}
+
+# This also sources vendor functions and .conf file settings
+. /usr/share/ltsp/ltsp-client-functions
+require_root
+
+BOOT=${BOOT:-"/boot"}
+VENDOR=${VENDOR:-"$(detect_vendor)"}
+CHROOT_NAME=${CHROOT_NAME:-"$(detect_arch)"}
+
+# Ensure default values for BOOT_METHODS, CMDLINE_LINUX_DEFAULTS, CMDLINE_NFS 
+# and CMDLINE_NBD. Distros *should* ship an /etc/ltsp/update-kernels.conf with
+# appropriate values for their distro.
+BOOT_METHODS=${BOOT_METHODS:-"NFS NBD"}
+CMDLINE_LINUX_DEFAULTS=${CMDLINE_LINUX_DEFAULTS:-"ro init=/sbin/init-ltsp"}
+CMDLINE_NFS=${CMDLINE_NFS:-"root=/dev/nfs ip=dhcp"}
+CMDLINE_NBD=${CMDLINE_NBD:-"root=/dev/nbd0 ip=dhcp"}
+
+# Set a default BOOTPROMPT_OPTS using the first defined in BOOT_METHODS
+boot_method_default=$(echo $BOOT_METHODS | awk '{print $1}')
+cmdline_method_default=$(eval echo '$CMDLINE_'$boot_method_default)
+BOOTPROMPT_OPTS="$CMDLINE_LINUX_DEFAULTS $cmdline_method_default"
+
+if [ -f /usr/lib/yaboot/yaboot ]; then
+    cp -a -v /usr/lib/yaboot/yaboot $BOOT
+    cat > $BOOT/yaboot.conf <<EOF
+timeout=0
+default=ltsp
+root=/dev/ram
+
+image=/ltsp/$CHROOT_NAME/vmlinux
+        label=ltsp
+        initrd=/ltsp/$CHROOT_NAME/initrd.img
+        append="$BOOTPROMPT_OPTS"
+EOF
+
+    kversions=$(kernel_versions)
+    if [ -n "$kversions" ]; then
+        for version in $kversions ; do
+            for method in $BOOT_METHODS ; do
+                cat >> $BOOT/yaboot.conf <<EOF
+
+image=/ltsp/$CHROOT_NAME/vmlinux-${version}
+        label=ltsp-$method-$version
+        initrd=/ltsp/$CHROOT_NAME/initrd.img-${version}
+        append="$CMDLINE_LINUX_DEFAULT $(eval echo '$CMDLINE_'$method)"
+
+EOF
+            done
+        done
+    fi
+else
+    msg "Skipping yaboot configuration. install yaboot package if you need it."
+fi
+
+syslinux_dir=/usr/lib/syslinux
+if [ -f $syslinux_dir/pxelinux.0 ]; then
+    PXECFG=$BOOT/pxelinux.cfg
+    cp $syslinux_dir/pxelinux.0 $BOOT
+
+    # copy over variant with extended support for gPXE
+    if [ -f "$syslinux_dir/gpxelinux.0" ]; then
+        cp $syslinux_dir/gpxelinux.0 $BOOT
+    fi
+
+    # copy the PXELINUX_DEFAULT helper program if installed, such as menu or
+    # vesamenu
+    if [ -f "$syslinux_dir/$PXELINUX_DEFAULT.c32" ]; then
+        cp "$syslinux_dir/$PXELINUX_DEFAULT.c32" $BOOT
+        case $PXELINUX_DEFAULT in
+            # set a timeout, otherwise the menu will wait indefinitely
+            menu|vesamenu) TIMEOUT=${TIMEOUT:-"50"} ;;
+            ifcpu64) IFCPU64=true ;;
+        esac
+    fi
+
+    if [ ! -d $PXECFG ]; then
+        mkdir $PXECFG
+    fi
+
+    cat > $PXECFG/default <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+
+default ${PXELINUX_DEFAULT:-"ltsp-$boot_method_default"}
+ontimeout ${ONTIMEOUT:-"ltsp-$boot_method_default"}
+${TIMEOUT:+timeout $TIMEOUT}
+
+EOF
+
+    # Remove all autogenerated menus.
+    rm -f $PXECFG/ltsp*
+
+    pxelinux_include_files=""
+    for method in $BOOT_METHODS ; do
+        pxelinux_include_files="$pxelinux_include_files ltsp-$method"
+        # Get the preferred default kernel, preferred 32-bit kernel, or any 
+        # kernel.
+        version=$(LIST_KERNELS="$LIST_KERNELS_DEFAULT $LIST_KERNELS_32 *" kernel_versions | head -n 1)
+    	cat > $PXECFG/ltsp-$method <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+
+label ltsp-$method
+menu label LTSP, using $method
+kernel vmlinuz${version:+-"$version"}
+append ro initrd=initrd.img${version:+-"$version"} $CMDLINE_LINUX_DEFAULT $(eval echo '$CMDLINE_'$method)
+ipappend ${IPAPPEND:-2}
+
+EOF
+
+    done
+
+    if boolean_is_true "$IFCPU64" ; then
+        if [ -f "$syslinux_dir/ifcpu64.c32" ]; then
+            cp "$syslinux_dir/ifcpu64.c32" $BOOT
+        fi
+        for method in $BOOT_METHODS ; do
+            pxelinux_include_files="$pxelinux_include_files ltsp-ifcpu64-$method"
+            cat > $PXECFG/ltsp-ifcpu64-$method <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+
+label ltsp-ifcpu64-$method
+menu label LTSP, using $method, Autodetect 64-bit, PAE or 32-bit kernels
+kernel ifcpu64.c32
+append ltsp-$method-64 -- ltsp-$method-PAE -- ltsp-$method-32
+
+EOF
+            # only generate an entry for the first boot method
+            for type in 64 PAE 32 ; do
+                # get appropriate kernel from LIST_KERNELS_64, LIST_KERNELS_PAE, 
+                # and LIST_KERNELS_32 variables.
+                case $type in
+                    64) list_kernels="$LIST_KERNELS_64 $LIST_KERNELS_PAE $LIST_KERNELS_32" ;;
+                    PAE) list_kernels="$LIST_KERNELS_PAE $LIST_KERNELS_32" ;;
+                    32) list_kernels="$LIST_KERNELS_32" ;;
+                esac
+                # only return the newest kernel of appropriate type.
+                version=$(LIST_KERNELS="$list_kernels *" kernel_versions | head -n 1)
+            	cat >> $PXECFG/ltsp-ifcpu64-$method <<EOF
+
+label ltsp-$method-$type
+menu hide
+menu label LTSP, using $method, with Linux $version
+kernel vmlinuz-$version
+append ro initrd=initrd.img-$version $CMDLINE_LINUX_DEFAULT $(eval echo '$CMDLINE_'$method)
+ipappend ${IPAPPEND:-2}
+
+EOF
+            done
+        done
+    fi
+
+    # Add entries for each kernel and boot method,
+    # Which needs a corresponding CMDLINE_ for each defined method.
+    # i.e. CMDLINE_NFS or CMDLINE_NBD
+    # Also requires that CMDLINE_LINUX_DEFAULT is set to a sane value.
+    kversions=$(kernel_versions)
+    if [ -n "$kversions" ]; then
+        for method in $BOOT_METHODS ; do
+            pxelinux_include_files="$pxelinux_include_files ltsp-versions-$method"
+            cat > $PXECFG/ltsp-versions-$method <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+
+menu begin ltsp-versions-$method
+menu label Other LTSP boot options using $method
+
+EOF
+            for version in $kversions ; do
+                cat >> $PXECFG/ltsp-versions-$method <<EOF
+
+label ltsp-$method-$version
+menu label LTSP, using $method, with Linux $version
+kernel vmlinuz-$version
+append ro initrd=initrd.img-$version $CMDLINE_LINUX_DEFAULT $(eval echo '$CMDLINE_'$method)
+ipappend ${IPAPPEND:-2}
+
+EOF
+            done
+            cat >> $PXECFG/ltsp-versions-$method <<EOF
+menu end
+EOF
+        done
+    fi
+
+    for file in $pxelinux_include_files ; do
+        if [ -f "$PXECFG/$file" ]; then
+            cat "$PXECFG/$file" >> $PXECFG/default
+        fi
+    done
+
+    memtest_bin='memtest86+.bin memtest86.bin'
+    for memtest in $memtest_bin ; do
+        memtest_name=$(basename $memtest .bin)
+        if [ -f $BOOT/$memtest_name ]; then
+            # prefer memtest86+ and memtest86 without the .bin extension, to
+            # work around bug(s) in pxelinux/memtest86*:
+            # http://bugs.debian.org/546219
+            memtest="$memtest_name"
+        fi
+        if [ -f $BOOT/$memtest ]; then
+            cat > $PXECFG/memtest <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+label $memtest_name
+kernel $memtest
+
+EOF
+        fi
+    done
+
+else
+    msg "Skipping PXE configuration.  Install the syslinux package if you need it."
+fi
+
+
+if ([ "$(detect_arch)" = "armhf" ] || [ "$(detect_arch)" = "armel" ]) && which mkimage >/dev/null; then
+    PXECFG=$BOOT/pxelinux.cfg
+
+    if [ ! -d $PXECFG ]; then
+        mkdir $PXECFG
+    fi
+
+    version=$(LIST_KERNELS="$LIST_KERNELS_DEFAULT $LIST_KERNELS_ARM *" kernel_versions | head -n 1)
+    cat > $PXECFG/default <<EOF
+# This file is regenerated when update-kernels runs.
+# Do not edit, see /etc/ltsp/update-kernels.conf instead.
+
+default ${PXELINUX_DEFAULT:-"ltsp-$boot_method_default"}
+ontimeout ${ONTIMEOUT:-"ltsp-$boot_method_default"}
+${TIMEOUT:+timeout $TIMEOUT}
+
+label ltsp-$boot_method_default
+kernel uImage${version:+-"$version"}
+initrd uInitrd${version:+-"$version"}
+append ro $CMDLINE_LINUX_DEFAULT $(eval echo '$CMDLINE_'$boot_method_default)
+EOF
+
+    mkimage -A arm -O linux -T kernel -C none -a 0x80008000 -e 0x80008000 \
+        -n "LTSP kernel" -d $BOOT/vmlinuz${version:+-"$version"} \
+        $BOOT/uImage${version:+-"$version"}
+    mkimage -A arm -O linux -T ramdisk -C none -a 0x0 -e 0x0 \
+        -n "LTSP initrd" -d $BOOT/initrd.img${version:+-"$version"} \
+        $BOOT/uInitrd${version:+-"$version"}
+
+else
+    msg "Skipping ARM configuration.  Install the flash-kernel package if you need it."
+fi
+
+
+# allow specifying a specific kernel image to update, from kernel postinst
+if [ -f "$2" ]; then
+    ALL_KERNELS="$2"
+else
+    ALL_KERNELS="$(find $BOOT -type f -name 'vmlinu*')"
+fi
+
+# look for symlinks, too, and put them after the "real" kernels
+ALL_KERNELS="$ALL_KERNELS $(find $BOOT -type l -name 'vmlinu*')"
+
+for kernel in $ALL_KERNELS ; do
+    basename=$(basename "$kernel")
+    initrd=initrd.img
+    nbi=nbi.img
+
+    case $basename in
+        vmlinuz|vmlinux)
+            # USE DEFAULT
+        ;;
+        vmlinu*.old) 
+            initrd=$initrd.old
+            nbi=$nbi.old
+        ;;
+        vmlinuz*) 
+            version=${basename##vmlinuz-}
+            initrd=$initrd-$version
+            nbi=$nbi-$version
+        ;;
+        vmlinux*) 
+            version=${basename##vmlinux-}
+            initrd=$initrd-$version
+            nbi=$nbi-$version
+        ;;
+    esac
+
+    if [ -L "$kernel" ]; then
+        basename="$(readlink $kernel)"
+        if [ -f "$BOOT/$basename" ]; then
+            case $basename in
+                vmlinuz*)
+                    version=${basename##vmlinuz-}
+                ;;
+                vmlinux*)
+                    version=${basename##vmlinux-}
+                ;;
+            esac
+
+            realnbi="nbi.img-$version"
+            if [ -f "$BOOT/$realnbi" ]; then
+                ln -sf $realnbi $BOOT/$nbi
+            fi
+        fi
+    else
+        if which mkelfImage >/dev/null; then
+            # x86_64/amd64 i386 ia64(?): mkelfimage
+            MKELFIMAGE_INITRD_OPT=""
+            if [ -z "$MKELFIMAGE_OPTS" ]; then
+                MKELFIMAGE_OPTS="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKELFIMAGE_INITRD_OPT="--ramdisk=$BOOT/$initrd"
+            fi
+            mkelfImage --command-line="$MKELFIMAGE_OPTS" --output=$BOOT/$nbi.tmp \
+                --kernel=$kernel $MKELFIMAGE_INITRD_OPT && mv $BOOT/$nbi.tmp $BOOT/$nbi
+        elif which mkelf-linux >/dev/null; then
+            # i386: mknbi
+            MKELF_LINUX_INITRD_OPT=""
+            if [ -z "$MKELF_LINUX_APPEND" ]; then
+                MKELF_LINUX_APPEND="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKELF_LINUX_INITRD_OPT="$BOOT/$initrd"
+            fi
+            mkelf-linux $MKELF_LINUX_OPTS --append="$MKELF_LINUX_APPEND" \
+                -o $BOOT/$nbi $kernel $MKELF_LINUX_INITRD_OPT
+        else
+            if [ -z "$mkelf_seen" ]; then
+                mkelf_seen=true
+                msg "Skipping etherboot images.  Install the mkelfimage package if you need them."
+            fi
+        fi
+        if which mknbi-linux >/dev/null ; then
+            # i386: mknbi
+            # generate an legacy-nbi.img for legacy versions of etherboot that
+            # didn't support ELF
+
+            MKNBI_LINUX_INITRD_OPT=""
+            if [ -z "$MKNBI_LINUX_APPEND" ]; then
+                MKNBI_LINUX_APPEND="$BOOTPROMPT_OPTS"
+            fi
+            if [ -f "$BOOT/$initrd" ]; then
+                MKNBI_LINUX_INITRD_OPT="$BOOT/$initrd"
+            fi
+            mknbi-linux $MKNBI_LINUX_OPTS --append="$MKNBI_LINUX_APPEND" \
+                -o $BOOT/legacy-"$nbi" $kernel $MKNBI_LINUX_INITRD_OPT
+
+        fi
+    fi
+done

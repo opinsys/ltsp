@@ -1,0 +1,15 @@
+# Sourced with .
+
+XCONF=${XCONF:-/etc/X11/xorg.conf}
+
+# Only assemble a xorg.conf is CONFIGURE_X=True
+if boolean_is_true "${CONFIGURE_X}"; then
+    # Run custom command if supplied, otherwise use ours
+    if [ -n "${CONFIGURE_X_COMMAND}" ] && [ -x "${CONFIGURE_X_COMMAND}" ]; then
+        ${CONFIGURE_X_COMMAND}
+    else
+        if [ -n "$screen_hacks" ] || [ -n "$monitor_hacks" ] || [ -n "$device_hacks" ] || [ -n "$module_hacks" ] || [ -n "$display_hacks" ]; then
+            write_xorg_conf > ${XCONF} || true
+        fi
+    fi
+fi

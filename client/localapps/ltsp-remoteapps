@@ -1,0 +1,17 @@
+#!/bin/sh
+
+if [ "$1" = "--wait" ]; then
+    xprop -root -f LTSP_RCOMMAND_WAIT 8s -set LTSP_RCOMMAND_WAIT "true"
+    shift
+fi
+
+CMD=$1
+shift
+
+unset ARGS
+for i in "$@"; do
+    i=$(echo $i|sed -e '/ /s/^/"/' -e '/ /s/$/"/')
+    ARGS="$ARGS $i"
+done
+
+xprop -root -f LTSP_RCOMMAND 8s -set LTSP_RCOMMAND "$CMD $ARGS"

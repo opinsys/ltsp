@@ -1,0 +1,119 @@
+#!/bin/sh
+LANG=C
+
+setup() {
+    if [ ! -d ${TMP_XDG_DIR_LOCAL} ]; then
+        exit
+    fi
+
+    for d in applications icons; do
+        mkdir -p "${TMP_XDG_DIR_LOCAL}/${d}"
+    done
+}
+
+generate_local() {
+    # Build desktop file list
+    if [ -n "${LOCAL_APPS_MENU_ITEMS}" ]; then
+        DESKTOP_FILES=""
+        local oldifs="${IFS-not set}"
+        IFS=,
+        for i in ${LOCAL_APPS_MENU_ITEMS}; do 
+            if [ -e "/usr/share/applications/${i}.desktop" ]; then 
+                DESKTOP_FILES="${DESKTOP_FILES} /usr/share/applications/${i}.desktop" 
+            elif [ -d "/usr/share/applications/${i%-*}" ] && [ -e "/usr/share/applications/${i%-*}/${i##*-}.desktop" ]; then
+                DESKTOP_FILES="${DESKTOP_FILES} /usr/share/applications/${i%-*}/${i##*-}.desktop" 
+            fi
+        done
+        test "$oldifs" = "not set" && unset IFS || IFS="$oldifs"
+    else
+        DESKTOP_FILES=$(find /usr/share/applications -regex '.*\.desktop$')
+    fi
+
+    # Cycle through all .desktop files in client's system applications dir
+    for desktop in ${DESKTOP_FILES}; do
+        local_desktop=${TMP_XDG_DIR_LOCAL}/applications/${desktop##/usr/share/applications/}
+
+        # Copy client's .desktop file to local
+        [ ! -d ${local_desktop%/*} ] && mkdir -p ${local_desktop%/*}
+        cp ${desktop} ${local_desktop}
+
+        # Change Exec and TryExec to our localapps command
+        if [ -z "$(grep 'X-LTSP-NoChange=1' ${local_desktop})" ]; then
+            sed -i -e 's/^TryExec=\(.*\)/TryExec=xprop/' -e 's/^Exec=\(.*\)/Exec=xprop -root -f LTSP_COMMAND 8s -set LTSP_COMMAND "\1"/' ${local_desktop}
+        fi
+
+        # Find the appropriate icon and copy it into the local icons dir
+        ICON=$(grep ^Icon ${local_desktop}|sed -e 's/^Icon=\(.*\)/\1/')
+
+        # If icon is relative path, find the real icon file
+        if [ -n "${ICON}" ] && [ "${ICON}" = "${ICON##*/}" ]; then
+            ICON=$(find -L /usr/share/icons /usr/share/pixmaps -type f -regex '.*'${ICON}'.*\(png\|xpm\|svg\)'|head -1)
+        fi
+
+        # If the icon file exists, copy it
+        if [ -e ${ICON} ]; then
+            base_ICON="${ICON##*/}" 
+            local_ICON=${TMP_XDG_DIR_LOCAL}/icons/${base_ICON}
+            cp ${ICON} ${local_ICON}
+        fi
+    done
+}
+
+generate_remote() {
+    # Build desktop file list
+    DESKTOP_FILES=""
+    local oldifs="${IFS-not set}"
+    IFS=,
+    for i in ${REMOTE_APPS_MENU_ITEMS}; do 
+        if [ -e "${TMP_SHARE}/applications/${i}.desktop" ]; then 
+            DESKTOP_FILES="${DESKTOP_FILES} ${TMP_SHARE}/applications/${i}.desktop" 
+        elif [ -d "/usr/share/applications/${i%-*}" ] && [ -e "/usr/share/applications/${i%-*}/${i##*-}.desktop" ]; then
+            DESKTOP_FILES="${DESKTOP_FILES} /usr/share/applications/${i%-*}/${i##*-}.desktop"
+        fi
+    done
+    test "$oldifs" = "not set" && unset IFS || IFS="$oldifs"
+
+    # Cycle through all .desktop files in client's system applications dir
+    for desktop in ${DESKTOP_FILES}; do
+        local_desktop=${TMP_XDG_DIR_LOCAL}/applications/${desktop##/usr/share/applications/}
+
+        # Copy client's .desktop file to local
+        [ ! -d ${local_desktop%/*} ] && mkdir -p ${local_desktop%/*}
+        cp ${desktop} ${local_desktop}
+
+        # Change Exec and TryExec to our localapps command
+        if [ -z "$(grep 'X-LTSP-NoChange=1' ${local_desktop})" ]; then
+            sed -i -e 's/^TryExec=\(.*\)/TryExec=xprop/' -e 's/^Exec=\(.*\)/Exec=ltsp-remoteapps "\1"/' ${local_desktop}
+        fi
+
+        # Find the appropriate icon and copy it into the local icons dir
+        ICON=$(grep ^Icon ${local_desktop}|sed -e 's/^Icon=\(.*\)/\1/')
+
+        # If icon is relative path, find the real icon file
+        if [ -n "${ICON}" ] && [ "${ICON}" = "${ICON##*/}" ]; then
+            ICON=$(find -L /usr/share/icons /usr/share/pixmaps -type f -regex '.*'${ICON}'.*\(png\|xpm\|svg\)'|head -1)
+        fi
+
+        # If the icon file exists, copy it
+        if [ -e ${ICON} ]; then
+            base_ICON="${ICON##*/}" 
+            local_ICON=${TMP_XDG_DIR_LOCAL}/icons/${base_ICON}
+            cp ${ICON} ${local_ICON}
+        fi
+    done
+}
+
+case "$1" in
+    install)
+        setup
+        if [ -n "${REMOTE_APPS_MENU_ITEMS}" ]; then
+            generate_remote
+        else
+            generate_local
+        fi
+    ;;
+    *)
+        echo "Usage: $0 install"
+        exit
+    ;;
+esac

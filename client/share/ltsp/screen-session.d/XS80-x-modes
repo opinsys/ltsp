@@ -1,0 +1,17 @@
+# if X_MODE_* are set and xrandr is disabled, generate a Display subsection
+# with the defined modes
+
+if [ -n "$X_MODE_0" ] || [ -n "$X_MODE_1" ] || [ -n "$X_MODE_2" ]; then
+    if boolean_is_true "$XRANDR_DISABLE" ; then
+        display_hacks="$display_hacks set_x_modes"
+        CONFIGURE_X="True"
+
+        for x in $X_MODE_0 $X_MODE_1 $X_MODE_2 ; do
+            X_MODES="$X_MODES \"$x\" "
+        done
+
+        set_x_modes() {
+            echo "        Modes $X_MODES"
+        }
+    fi
+fi

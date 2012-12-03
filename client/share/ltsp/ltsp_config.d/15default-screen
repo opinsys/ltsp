@@ -1,0 +1,20 @@
+# Ensure a default screen if X is present
+unset IS_SCREEN
+for i in 01 02 03 04 05 06 07 08 09 10 11 12; do
+    eval IS_SCREEN=\${SCREEN_${i}}
+    [ -n "${IS_SCREEN}" ] && break
+done
+if [ -z "${IS_SCREEN}" ]; then
+    # Set DEFAULT_DISPLAY_MANAGER="/path/to/dm" in lts.conf to avoid having a
+    # default screen, or DEFAULT_DISPLAY_MANAGER="" if you want to launch
+    # whatever is in /etc/X11/default-display-manager.
+    # See also init-ltsp.d/common/50-default-display-manager.
+    dm=${DEFAULT_DISPLAY_MANAGER-/usr/sbin/ldm}
+    if [ "$dm" != "/usr/sbin/ldm" ] ; then
+        true
+    elif [ -x /usr/sbin/ldm ]; then
+        set_lts_var SCREEN_07 ldm
+    elif [ -x /usr/bin/X ]; then
+        set_lts_var SCREEN_07 xdmcp
+    fi
+fi

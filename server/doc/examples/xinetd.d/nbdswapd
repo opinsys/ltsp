@@ -1,0 +1,13 @@
+# default: off
+# description: NBD swap daemon
+service nbdswapd
+{
+	disable		= yes
+	type		= UNLISTED
+	flags		= KEEPALIVE
+	socket_type     = stream
+	wait            = no
+	user            = nobody
+	server          = /usr/sbin/nbdswapd
+	port		= 9572
+}
